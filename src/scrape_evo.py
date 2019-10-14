@@ -71,10 +71,20 @@ def scrape_product(evo_url):
 
 
 
+def scrape_snwb_urls():
+	pages = ['', '/p_2', '/p_3']
+	evo_snwb_urls = []
+	for p in pages:
+		evo_url = f'https://www.evo.com/shop/snowboard/snowboards{p}/rpp_400'
+		r = requests.get(evo_url)
+		soup = BeautifulSoup(r.content, "lxml")
 
+		snowboards = soup.find_all('div', {'class':'product-thumb js-product-thumb'})
 
-
-
+		for s in snowboards:
+			attach = s.find('a', {'class': 'product-thumb-link js-product-thumb-details-link'})['href']
+			evo_snwb_urls.append(f'https://www.evo.com{attach}')
+	return evo_snwb_urls
 
 
 
