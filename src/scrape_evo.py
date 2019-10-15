@@ -1,5 +1,5 @@
 import psycopg2
-
+from collections import defaultdict
 # Requests sends and recieves HTTP requests.
 import requests
 
@@ -21,8 +21,10 @@ def _scrape_product(evo_url):
 	# find name of product
 	product_name = soup.find(id='buy-grid').find('h1', {'class': 'pdp-header-title'})
 	new_snwb['name'] = product_name.string.strip()
-	new_snwb['id'] = new_snwb_size['id'] = soup.find('span', {'class' : 'pdp-header-util-sku'}).string[4:].strip()
 	
+	new_snwb['id'] = snwb_id = soup.find('span', {'class' : 'pdp-header-util-sku'}).string[4:].strip()
+	
+
 	# add price some other way
 	#new_snwb['price'] = soup.find('span', {'class':'pdp-price-regular pdp-price-display no-wrap'})
 
@@ -36,7 +38,7 @@ def _scrape_product(evo_url):
 		#product detail name
 		p_detail = i.find('h5').string.lower().replace(' ', '_')
 		if p_detail == 'flex':
-			p_data = i.find('p').find('em').string[:2].strip()
+			p_data = int(i.find('p').find('em').string[:2].strip())
 		# product detail info
 		else:
 			p_data = i.find('p').find('em').string
@@ -58,21 +60,28 @@ def _scrape_product(evo_url):
 	product_mments = product_detail.find('table', {'class':'spec-table table'})
 	product_sizes = product_mments.find('thead')
 
-
+	sizes = []
+	snwb_sizes = defaultdict(dict)
 	for i in product_sizes.find_all('td'):
 		# The different sizes, each index is corresponds to the values below at the same index
 		#new_snwb_size[product_name.string.strip() + i.string]
-		print()
+		sizes.append(i.string)
+		snwb_sizes[snwb_id+i.string]['size'] = i.string
+
+
 	product_mments_details = product_mments.find('tbody').find_all('tr')
 	attributes = [tr.find_all('td') for tr in product_mments_details]
 
 
-	for i,j in zip(product_mments_details,attributes):
+	for i,j in zip(product_mments_details, attributes):
 		# name of mesurement
-		print(i.find('th').string)
+		print(i.find('th').string.lower().replace(' ', '_').replace('(', '').replace(')', ''))
+		for s in zip(snwb_sizes.keys(),j):
+			print(s)
+
 		# measurements indexed by sizes above, same order
-		print([a.string for a in j])
-	print(new_snwb)
+	print(snwb_sizes)
+	#print(new_snwb)
 
 
 
