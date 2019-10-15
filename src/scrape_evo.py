@@ -4,10 +4,24 @@ import requests
 import re
 from bs4 import BeautifulSoup
 
+prod_cols = ['name', 'id','rocker_type','flex','shape','core','laminates','sidewalls','base',
+			'edges','topsheet','graphics','additional_features','binding_compatibility',
+			'terrain','ability_level','rocker_type_s','shape_s','flex_rating','binding_mount_pattern',
+			'core_laminates','edge_tech','made_in_the_usa','warranty']
+
+size_cols = ['id','snwb_id','size','effective_edge_mm','tip_width_mm','waist_width_mm',
+		'tail_width_mm','sidecut_radius_m','stance_range_in', 'stance_setback_in',
+		'stance_setback_mm','rider_weight_lbs', 'width']
+
+
+
+
+
 
 def _scrape_product(evo_url):
 	
 	r = requests.get(evo_url)
+	print(evo_url)
 	soup = BeautifulSoup(r.content, "lxml")
 	new_snwb = dict()
 	snwb_sizes = defaultdict(dict)
@@ -30,10 +44,12 @@ def _scrape_product(evo_url):
 	for i in product_rows:
 		#product detail name
 		p_detail = i.find('h5').string.lower().replace(' ', '_')
+
 		if p_detail == 'flex':
-			p_data = int(i.find('p').find('em').string[:2].strip())
-		elif p_detail in ['rocker_type', 'shape']:
-			p_data = (re.sub(r'[^\x00-\x7F]+',' ', i.find('p').find('em').string) + ' - ' + i.find('span').string).lower()
+			p_data = i.find('p').find('em').string
+
+		#elif p_detail in ['rocker_type']:
+			#p_data = (re.sub(r'[^\x00-\x7F]+',' ', i.find('p').find('em').string) + ' - ' + i.find('span').string).lower()
 		# product detail info
 		else:
 			p_data = re.sub(r'[^\x00-\x7F]+',' ', i.find('p').find('em').string).lower()
@@ -48,6 +64,7 @@ def _scrape_product(evo_url):
 	for i in product_specs_rows:
 		# spec name
 		p_detail = i.find('span', {'class': 'pdp-spec-list-title'}).find('strong').string[:-1].lower().replace(' ', '_').replace('/', '_')
+
 		if p_detail in ['rocker_type', 'shape']:
 			p_detail = p_detail+'_s'
 		# spec info
@@ -64,9 +81,10 @@ def _scrape_product(evo_url):
 	size_order = []
 	size_spec_order = ['snwb_id', 'size']
 	for i in product_sizes.find_all('td'):
-		snwb_sizes[snwb_id+i.string]['size'] = i.string
-		snwb_sizes[snwb_id+i.string]['snwb_id'] = snwb_id
-		size_order.append(snwb_id+i.string)
+		if i.string != 'DNU':
+			snwb_sizes[snwb_id+i.string]['size'] = i.string
+			snwb_sizes[snwb_id+i.string]['snwb_id'] = snwb_id
+			size_order.append(snwb_id+i.string)
 
 
 	product_mments_details = product_mments.find('tbody').find_all('tr')
@@ -78,10 +96,11 @@ def _scrape_product(evo_url):
 		param = i.find('th').string.lower().replace(' ', '_').replace('(', '').replace(')', '')
 		# Matches the unique size IDs with the data
 		for k, d in zip(size_order,j):
-			if param in ['rider_weight_lbs', 'width']:
-				snwb_sizes[k][param] = d.string
-			else:
-				snwb_sizes[k][param] = float(d.string)
+			if d.string != None:
+				if param in ['rider_weight_lbs', 'width', 'sidecut_radius_m']:
+					snwb_sizes[k][param] = re.sub(r'[^\x00-\x7F]+',' ',d.string)
+				else:
+					snwb_sizes[k][param] = d.string
 		size_spec_order.append(param)
 
 	# final two dictionaries, printed for now but should insert method to get into postgresSQL
@@ -115,13 +134,16 @@ def _insertp_postgres(p_order, p_data):
 								flex_rating,
 								binding_mount_pattern,
 								core_laminates,
+								edge_tech,
+								made_in_the_usa,
 								warranty)
 			VALUES%s'''
 
 
 	conn = psycopg2.connect(dbname='snowboardcollect', user='postgres', host='localhost')
 	cur = conn.cursor()
-	value = tuple(p_data[i] for i in p_order)
+	filled_p_data = _fill_empty_prod(p_data)
+	value = tuple(filled_p_data[i] for i in prod_cols)
 	cur.execute(sql, (value,))
 	conn.commit()
 	cur.close()
@@ -138,6 +160,8 @@ def _insertsz_postgres(size_order, size_spec_order, snwb_sizes):
 							tail_width_mm,
 							sidecut_radius_m,
 							stance_range_in,
+							stance_setback_in,
+							stance_setback_mm,
 							rider_weight_lbs,
 							width)
 				VALUES%s'''
@@ -146,8 +170,10 @@ def _insertsz_postgres(size_order, size_spec_order, snwb_sizes):
 	cur = conn.cursor()
 	for s in size_order:
 		temp = [s]
-		for k in size_spec_order:
-			temp.append(snwb_sizes[s][k])
+		filled_temp = _fill_empty_sz(snwb_sizes[s])
+		for k in size_cols:
+			if k != 'id':
+				temp.append(filled_temp[k])
 		value = tuple(v for v in temp)
 		cur.execute(sql,(value,))
 	conn.commit()
@@ -156,6 +182,19 @@ def _insertsz_postgres(size_order, size_spec_order, snwb_sizes):
 
 	print('Postgres insertion for product/spec details: COMPLETE')
 	print()
+
+
+def _fill_empty_prod(new_snwb):
+	for c in prod_cols:
+		if c not in new_snwb.keys():
+			new_snwb[c] = None
+	return new_snwb
+
+def _fill_empty_sz(snwb_sizes):
+	for c in size_cols:
+		if c not in snwb_sizes.keys() and c != 'id':
+			snwb_sizes[c] = None
+	return snwb_sizes
 
 
 
@@ -171,7 +210,8 @@ def _scrape_snwb_urls():
 
 		for s in snowboards:
 			attach = s.find('a', {'class': 'product-thumb-link js-product-thumb-details-link'})['href']
-			evo_snwb_urls.append(f'https://www.evo.com{attach}')
+			if 'splitboard' not in attach and 'kid' not in attach and 'mini-tree-hunter' not in attach and 'boys' not in attach and 'used' not in attach and 'break-powder-drifter' not in attach and 'break-powder-glider' not in attach and 'girls' not in attach and 'spring-break-swallowtail' not in attach:
+				evo_snwb_urls.append(f'https://www.evo.com{attach}')
 	return evo_snwb_urls
 
 
