@@ -32,11 +32,10 @@ def _scrape_product(evo_url):
 		p_detail = i.find('h5').string.lower().replace(' ', '_')
 		if p_detail == 'flex':
 			p_data = int(i.find('p').find('em').string[:2].strip())
-		elif p_detail == 'rocker_type':
+		elif p_detail in ['rocker_type', 'shape']:
 			p_data = (re.sub(r'[^\x00-\x7F]+',' ', i.find('p').find('em').string) + ' - ' + i.find('span').string).lower()
 		# product detail info
 		else:
-			#p_data = i.find('p').find('em').string.replace(u"\u2122", '')
 			p_data = re.sub(r'[^\x00-\x7F]+',' ', i.find('p').find('em').string).lower()
 		new_snwb[p_detail] = p_data
 		p_order.append(p_detail)
@@ -49,7 +48,7 @@ def _scrape_product(evo_url):
 	for i in product_specs_rows:
 		# spec name
 		p_detail = i.find('span', {'class': 'pdp-spec-list-title'}).find('strong').string[:-1].lower().replace(' ', '_').replace('/', '_')
-		if p_detail == 'rocker_type':
+		if p_detail in ['rocker_type', 'shape']:
 			p_detail = p_detail+'_s'
 		# spec info
 		p_data = re.sub(r'[^\x00-\x7F]+',' ',i.find('span',{'class':'pdp-spec-list-description'}).string).lower()
@@ -63,15 +62,16 @@ def _scrape_product(evo_url):
 	# Creates the sizes table for each snowboard
 	# Scrapes the sizes and makes unique ID from the snowboard ID (product ID) + size
 	size_order = []
+	size_spec_order = ['snwb_id', 'size']
 	for i in product_sizes.find_all('td'):
 		snwb_sizes[snwb_id+i.string]['size'] = i.string
 		snwb_sizes[snwb_id+i.string]['snwb_id'] = snwb_id
 		size_order.append(snwb_id+i.string)
 
+
 	product_mments_details = product_mments.find('tbody').find_all('tr')
 	attributes = [tr.find_all('td') for tr in product_mments_details]
 
-	size_spec_order = []
 	# Matches the scraped values with the proper parameter names
 	for i,j in zip(product_mments_details, attributes):
 		# name of mesurement
@@ -85,25 +85,11 @@ def _scrape_product(evo_url):
 		size_spec_order.append(param)
 
 	# final two dictionaries, printed for now but should insert method to get into postgresSQL
-	#print(snwb_sizes)
-	#print(new_snwb)
-	
-	for k,v in new_snwb.items():
-		print(f'KEY: {k}  VALUE: {v}')
+	#snwb_sizes = different sizes measurements
+	# new_snwb = product details and specs tables
 
-	#print()
-
-	#for k,v in snwb_sizes.items():
-		#print(f'KEY: {k}  VALUE: {v}')
-
-	for p in p_order:
-		print(p+',')
-
-	#print(size_order)
-	#print(size_spec_order)
-
-	#_insertp_postgres(p_order, new_snwb)
-
+	_insertp_postgres(p_order, new_snwb)
+	_insertsz_postgres(size_order, size_spec_order, snwb_sizes)
 	print(f'Done with snowboard id: {snwb_id}')
 
 
@@ -125,23 +111,51 @@ def _insertp_postgres(p_order, p_data):
 								terrain,
 								ability_level,
 								rocker_type_s,
-								shape,
+								shape_s,
 								flex_rating,
 								binding_mount_pattern,
 								core_laminates,
 								warranty)
-			VALUES(%s);
-
-
-		'''
+			VALUES%s'''
 
 
 	conn = psycopg2.connect(dbname='snowboardcollect', user='postgres', host='localhost')
 	cur = conn.cursor()
 	value = tuple(p_data[i] for i in p_order)
 	cur.execute(sql, (value,))
+	conn.commit()
+	cur.close()
+	print('Postgres insertion for product/spec details: COMPLETE')
+	print()
+
+def _insertsz_postgres(size_order, size_spec_order, snwb_sizes):
+	sql = ''' INSERT INTO sizes(id,
+							snwb_id,
+							size,
+							effective_edge_mm,
+							tip_width_mm,
+							waist_width_mm,
+							tail_width_mm,
+							sidecut_radius_m,
+							stance_range_in,
+							rider_weight_lbs,
+							width)
+				VALUES%s'''
+
+	conn = psycopg2.connect(dbname='snowboardcollect', user='postgres', host='localhost')
+	cur = conn.cursor()
+	for s in size_order:
+		temp = [s]
+		for k in size_spec_order:
+			temp.append(snwb_sizes[s][k])
+		value = tuple(v for v in temp)
+		cur.execute(sql,(value,))
+	conn.commit()
+	cur.close()
 
 
+	print('Postgres insertion for product/spec details: COMPLETE')
+	print()
 
 
 
@@ -161,6 +175,15 @@ def _scrape_snwb_urls():
 	return evo_snwb_urls
 
 
-_scrape_product('https://www.evo.com/snowboards/capita-spring-break-slush-slasher-snowboard#image=161992/642522/capita-spring-break-slush-slasher-snowboard-2020-.jpg')
+
+if __name__ == '__main__':
+	print('Scraping Evo for snowboards')
+	urls = _scrape_snwb_urls()
+	for u in urls:
+		_scrape_product(u)
+	print('\n All Done')
+
+
+
 
 
