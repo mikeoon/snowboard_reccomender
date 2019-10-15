@@ -1,22 +1,17 @@
 import psycopg2
 from collections import defaultdict
-# Requests sends and recieves HTTP requests.
 import requests
-
-# Beautiful Soup parses HTML documents in python.
 from bs4 import BeautifulSoup
 
 
 def _scrape_product(evo_url):
-	#evo_url = 'https://www.evo.com/snowboards/capita-spring-break-slush-slasher-snowboard#image=161992/642522/capita-spring-break-slush-slasher-snowboard-2020-.jpg'
-	#vo_url = 'https://www.evo.com/snowboards/jones-mountain-twin-snowboard#image=161602/640791/clone.jpg'
+	
 	r = requests.get(evo_url)
-	print(r)
-
 	soup = BeautifulSoup(r.content, "lxml")
-
 	new_snwb = dict()
-	new_snwb_size = dict()
+	snwb_sizes = defaultdict(dict)
+
+	print(f'Status for current page: {r}\n')
 
 	# find name of product
 	product_name = soup.find(id='buy-grid').find('h1', {'class': 'pdp-header-title'})
@@ -24,10 +19,6 @@ def _scrape_product(evo_url):
 	
 	new_snwb['id'] = snwb_id = soup.find('span', {'class' : 'pdp-header-util-sku'}).string[4:].strip()
 	
-
-	# add price some other way
-	#new_snwb['price'] = soup.find('span', {'class':'pdp-price-regular pdp-price-display no-wrap'})
-
 	product_detail = soup.find('div', {'class':'mobile-accordion-group'})
 
 	# gets from the Product Detail tabel
@@ -60,29 +51,31 @@ def _scrape_product(evo_url):
 	product_mments = product_detail.find('table', {'class':'spec-table table'})
 	product_sizes = product_mments.find('thead')
 
-	sizes = []
-	snwb_sizes = defaultdict(dict)
+	# Creates the sizes table for each snowboard
+	# Scrapes the sizes and makes unique ID from the snowboard ID (product ID) + size
 	for i in product_sizes.find_all('td'):
-		# The different sizes, each index is corresponds to the values below at the same index
-		#new_snwb_size[product_name.string.strip() + i.string]
-		sizes.append(i.string)
 		snwb_sizes[snwb_id+i.string]['size'] = i.string
-
+		snwb_sizes[snwb_id+i.string]['snwb_id'] = snwb_id
 
 	product_mments_details = product_mments.find('tbody').find_all('tr')
 	attributes = [tr.find_all('td') for tr in product_mments_details]
 
-
+	# Matches the scraped values with the proper parameter names
 	for i,j in zip(product_mments_details, attributes):
 		# name of mesurement
-		print(i.find('th').string.lower().replace(' ', '_').replace('(', '').replace(')', ''))
-		for s in zip(snwb_sizes.keys(),j):
-			print(s)
+		param = i.find('th').string.lower().replace(' ', '_').replace('(', '').replace(')', '')
+		# Matches the unique size IDs with the data
+		for k, d in zip(snwb_sizes.keys(),j):
+			if param in ['rider_weight_lbs', 'width']:
+				snwb_sizes[k][param] = d.string
+			else:
+				snwb_sizes[k][param] = float(d.string)
 
-		# measurements indexed by sizes above, same order
+	# final two dictionaries, printed for now but should insert method to get into postgresSQL
 	print(snwb_sizes)
-	#print(new_snwb)
+	print(new_snwb)
 
+	print(f'Done with snowboard id: {snwb_id}')
 
 
 def _create_postgres():
