@@ -46,6 +46,7 @@ def _scrape_resort_table(table_url):
 					row.append(data)
 		resort_data.append(row)
 
+	# Puts the data in the respetive columns
 	df_row = defaultdict(list)
 	df_list = []
 	for r in resort_data:
@@ -117,13 +118,5 @@ if __name__ == '__main__':
 	df_whole = pd.concat(df_pickle, ignore_index=True)
 	df_whole.to_pickle('../data/resorts_data.pkl')
 	print('\naLl DoNe')
-
-
-
-
-
-
-
-
 
 
