@@ -1,5 +1,4 @@
 import requests
-import re
 import numpy as np
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -25,7 +24,7 @@ def _scrape_resort_table(table_url):
 
 	# fix some names of the columns, resort, zone, tota-snow_scorew_preservation
 	col_names[1] = col_names[1][-6:]
-	col_names[2] = col_names[2][-4:]
+	col_names[3] = col_names[3][-4:]
 	col_names[4] = col_names[4][:-1]
 	col_names[-1] = col_names[-1][:-7].replace('rew','re')
 
@@ -53,13 +52,15 @@ def _scrape_resort_table(table_url):
 		for c,d in zip(col_names, r):
 			df_row[c].append(d)
 	
+	# cleans data to work with it easier later
 	_perc_to_float(df_row)
 	_str_to_inches(df_row)
+	_range_to_bt(df_row)
 
 	return df_row
 
 
-
+# converts percent strings into decimals
 def _perc_to_float(data):
 	percents = ['days_w_morethan_6_inches', 'months_w_more_than_90_inches', 
 			'months_w_lessthan_30_inches', 'north-facing_terrain', 'east-facing_terrain',
@@ -71,27 +72,51 @@ def _perc_to_float(data):
 		data[p] = vfunc(np.array(data[p]))
 	return data
 
+# converts inches strings to actual float inches
 def _str_to_inches(data):
 	inches = lambda x: float(x[:-1])
 	vfunc = np.vectorize(inches)
 	data['truesnow'] = vfunc(np.array(data['truesnow']))
 	return data
 
+# converts base and top elevation into a more readable range
+# Also makes 2 new columns, base and top
+def _range_to_bt(data):
+	ft = lambda x: float(x[:-1])
+	vfunc = np.vectorize(ft)
 
-#pages = [1, 2, 3, 4, 5, 6, 7, 8]
-pages = [1]
-df_pickle = []
+	base = []
+	top = []
 
-for p in pages:
-	r_page = f'https://www.zrankings.com/ski-resorts/snow?_=1571261206007&amp;page={p}'
-	p_data = _scrape_resort_table(r_page)
-	df_pickle.append(pd.DataFrame(p_data))
-	print(f'Done with page {p}')
+	#splits the string into 2 useable floats
+	for i in data['base_and_top_elev.']:
+		temp = i.split('to')
+		base.append(temp[0])
+		top.append(temp[1])
+	# makes two new columns
+	data['base'] = vfunc(np.array(base))
+	data['top'] = vfunc(np.array(top))
+	data['base_and_top_elev.'] = [d.replace('to','-').replace('\'', '') for d in data['base_and_top_elev.']]
+	return data
 
-#df_whole = pd.concat(df_pickle, ignore_index=True)
-#df_whole.to_pickle('../data/resorts_data.pkl')
-print(df_pickle[0])
-print('alL dOnE')
+
+if __name__ == '__main__':
+	# Runs the tables that they have now which are just 8
+	pages = [1, 2, 3, 4, 5, 6, 7, 8]
+	df_pickle = []
+	print('Start scrape from zrankings')
+
+	# Pulls from the 8 tables
+	for p in pages:
+		r_page = f'https://www.zrankings.com/ski-resorts/snow?_=1571261206007&amp;page={p}'
+		p_data = _scrape_resort_table(r_page)
+		df_pickle.append(pd.DataFrame(p_data))
+		print(f'Done with page {p}')
+
+	# Creates the pickled data frame for EDA and other use
+	df_whole = pd.concat(df_pickle, ignore_index=True)
+	df_whole.to_pickle('../data/resorts_data.pkl')
+	print('\naLl DoNe')
 
 
 
